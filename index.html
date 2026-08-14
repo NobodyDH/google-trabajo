@@ -1,0 +1,901 @@
+<?php
+// 1. Iniciar la sesión siempre al principio del archivo
+session_start();
+
+// 2. Inicializar la estructura del carrito si no existe aún en la sesión
+if (!isset($_SESSION['carrito'])) {
+    $_SESSION['carrito'] = [];
+}
+
+// 3. PROCESAMIENTO DE ACCIONES (Agregar, Editar, Eliminar, Vaciar)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    $action = $_POST['action'];
+
+    switch ($action) {
+        case 'add':
+            // Recibir y limpiar variables enviadas desde un formulario de producto
+            $id = filter_input(INPUT_POST, 'id', FILTER_SANITIZE_NUMBER_INT);
+            $nombre = filter_input(INPUT_POST, 'nombre', FILTER_SANITIZE_SPECIAL_CHARS);
+            $precio = filter_input(INPUT_POST, 'precio', FILTER_SANITIZE_NUMBER_FLOAT, FILTER_FLAG_ALLOW_FRACTION);
+            $cantidad = filter_input(INPUT_POST, 'cantidad', FILTER_SANITIZE_NUMBER_INT) ?: 1;
+
+            if ($id && $nombre && $precio !== false) {
+                // Si el producto ya existe en el carrito, se incrementa la cantidad
+                if (isset($_SESSION['carrito'][$id])) {
+                    $_SESSION['carrito'][$id]['cantidad'] += $cantidad;
+                } else {
+                    // Si no existe, se añade como nuevo registro
+                    $_SESSION['carrito'][$id] = [
+                        'id' => $id,
+                        'nombre' => $nombre,
+                        'precio' => (float)$precio,
+                        'cantidad' => (int)$cantidad
+                    ];
+                }
+            }
+            break;
+
+        case 'update':
+            $id = filter_input(INPUT_POST, 'id', FILTER_SANITIZE_NUMBER_INT);
+            $cantidad = filter_input(INPUT_POST, 'cantidad', FILTER_SANITIZE_NUMBER_INT);
+
+            if ($id && isset($_SESSION['carrito'][$id])) {
+                if ($cantidad > 0) {
+                    $_SESSION['carrito'][$id]['cantidad'] = (int)$cantidad;
+                } else {
+                    // Si la cantidad se reduce a 0 o menos, se remueve el producto
+                    unset($_SESSION['carrito'][$id]);
+                }
+            }
+            break;
+
+        case 'remove':
+            $id = filter_input(INPUT_POST, 'id', FILTER_SANITIZE_NUMBER_INT);
+            if ($id && isset($_SESSION['carrito'][$id])) {
+                unset($_SESSION['carrito'][$id]);
+            }
+            break;
+
+        case 'clear':
+            // Reiniciar totalmente el carrito
+            $_SESSION['carrito'] = [];
+            break;
+    }
+
+    // Redireccionar a la misma página para evitar re-envíos duplicados con F5
+    header('Location: ' . $_SERVER['PHP_SELF']);
+    exit;
+}
+
+// 4. CÁLCULO DE TOTALES
+$total_items = 0;
+$total_precio = 0.00;
+
+foreach ($_SESSION['carrito'] as $item) {
+    $total_items += $item['cantidad'];
+    $total_precio += $item['precio'] * $item['cantidad'];
+}
+?>
+
+    <style>
+        body { font-family: Arial, sans-serif; margin: 30px; line-height: 1.6; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        th { background-color: #f4f4f4; }
+        .grid-productos { display: flex; gap: 20px; margin-bottom: 40px; }
+        .card-producto { border: 1px solid #ccc; padding: 15px; border-radius: 8px; width: 200px; text-align: center; }
+        .btn { padding: 8px 12px; border: none; cursor: pointer; border-radius: 4px; }
+        .btn-add { background: #28a745; color: white; }
+        .btn-remove { background: #dc3545; color: white; }
+        .btn-clear { background: #ffc107; color: black; }
+        .input-qty { width: 50px; text-align: center; }
+    </style>
+
+    <hr>
+
+    <h2>Tu Carrito de Compras (<?php echo $total_items; ?> artículos)</h2>
+
+    <?php if (empty($_SESSION['carrito'])): ?>
+    <?php else: ?>
+        <table>
+            <thead>
+                <tr>
+                    <th>Producto</th>
+                    <th>Precio Unitario</th>
+                    <th>Cantidad</th>
+                    <th>Subtotal</th>
+                    <th>Acción</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($_SESSION['carrito'] as $item): ?>
+                    <?php $subtotal = $item['precio'] * $item['cantidad']; ?>
+                    <tr>
+                        <td><?php echo htmlspecialchars($item['nombre']); ?></td>
+                        <td>$<?php echo number_format($item['precio'], 2); ?></td>
+                        <td>
+                            <!-- Formulario para actualizar cantidad directamente -->
+                            <form method="POST" style="display:inline;">
+                                <input type="hidden" name="action" value="update">
+                                <input type="hidden" name="id" value="<?php echo $item['id']; ?>">
+                                <input type="number" name="cantidad" value="<?php echo $item['cantidad']; ?>" min="1" class="input-qty" onchange="this.form.submit()">
+                            </form>
+                        </td>
+                        <td>$<?php echo number_format($subtotal, 2); ?></td>
+                        <td>
+                            <!-- Formulario para eliminar ítem -->
+                            <form method="POST" style="display:inline;">
+                                <input type="hidden" name="action" value="remove">
+                                <input type="hidden" name="id" value="<?php echo $item['id']; ?>">
+                                <button type="submit" class="btn btn-remove">Eliminar</button>
+                            </form>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="3" style="text-align: right; font-weight: bold;">Total:</td>
+                    <td colspan="2" style="font-weight: bold;">$<?php echo number_format($total_precio, 2); ?></td>
+                </tr>
+            </tfoot>
+        </table>
+
+        <br>
+        <!-- Formulario para vaciar todo el carrito -->
+        <form method="POST">
+            <input type="hidden" name="action" value="clear">
+            <button type="submit" class="btn btn-clear">Vaciar Carrito</button>
+        </form>
+    <?php endif; ?>
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Navbar Google</title>
+
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.1/css/all.min.css">
+
+    <link rel="stylesheet" href="style/style.css">
+</head>
+<body>
+
+<nav class="navbar">
+
+    <div class="logo">
+        <img src="img/google.webp" alt="">
+    </div>
+
+    <ul class="menu">
+        <li><a href="#">Phones</a></li>
+        <li><a href="wi_filess.php">Fi Wireless</a></li>
+        <li><a href="Watches_Trackers.php">Watches & Trackers</a></li>
+        <li><a href="#">Earbuds</a></li>
+        <li><a href="#">Smart Home</a></li>
+        <li><a href="#">Tablets</a></li>
+        <li><a href="#">Accessories</a></li>
+        <li><a href="#">Offers</a></li>
+        <li><a href="#">Support</a></li>
+    </ul>
+
+    <div class="icons">
+        <i class="fa-solid fa-magnifying-glass"></i>
+        <i class="fa-solid fa-location-dot"></i>
+        <span>Stores</span>
+        <a href="#carrito-seccion" class="cart-icon" style="position: relative; color: #202124; text-decoration: none;">
+        <i class="fa-solid fa-cart-shopping"></i>
+        <?php if ($total_items > 0): ?>
+            <span style="position: absolute; top: -8px; right: -10px; background: #d93025; color: white; border-radius: 50%; padding: 2px 6px; font-size: 11px; font-weight: bold;">
+                <?php echo $total_items; ?>
+            </span>
+        <?php endif; ?>
+    </a>
+        <i class="fa-solid fa-grip"></i>
+
+        <img class="perfil"
+        src="img/perfil.png" alt="">
+    </div>
+
+</nav>
+<div class="video-container">
+
+    <video autoplay muted loop playsinline>
+        <source src="img/video.mp4" type="video/mp4">
+    </video>
+
+    <div class="overlay"></div>
+
+    <div class="hero-text">
+        <h1>
+            Google Pixel 11.<br>
+            Pre-order August 12.
+        </h1>
+
+        <p>
+            Get an exclusive Google Store offer when you sign up to receive
+            emails. For new subscribers only.
+        </p>
+
+        <button>Sign up and Save</button>
+
+        <small>
+            Your personal data will be processed according to Google's Privacy Policy.
+        </small>
+    </div>
+
+</div>      
+
+<section class="popular">
+
+    <h2>Popular on the Google Store.</h2>
+
+    <div class="slider" id="slider">
+        <div class="card">
+
+            <div class="imagen">
+                <img src="img/pxiel 10.png">
+            </div>
+
+            <h3>Pixel 10 Pro and Pro XL</h3>
+            <p>From $999</p>
+     
+            <a href="#">
+            <form method="POST">
+        <input type="hidden" name="action" value="add">
+        <input type="hidden" name="id" value="101"> <!-- ID Único del producto -->
+        <input type="hidden" name="nombre" value="Pixel 8 Pro">
+        <input type="hidden" name="precio" value="999.00">
+        <input type="hidden" name="cantidad" value="1">
+        
+        <button type="submit" class="btn">Comprar</button>
+    </form>
+            </a>
+
+        </div>
+
+        <div class="card">
+
+            <div class="imagen">
+                <img src="img/pixel.png">
+            </div>
+
+            <h3>Pixel 10 Pro Fold</h3>
+            <p>From $1,799</p>
+            
+            <a href="#">
+            <form method="POST">
+        <input type="hidden" name="action" value="add">
+        <input type="hidden" name="id" value="101"> <!-- ID Único del producto -->
+        <input type="hidden" name="nombre" value="Pixel 8 Pro">
+        <input type="hidden" name="precio" value="999.00">
+        <input type="hidden" name="cantidad" value="1">
+        
+        <button type="submit" class="btn">Comprar</button>
+    </form>
+            </a>
+
+        </div>
+
+        <div class="card">
+
+            <div class="imagen">
+                <img src="img/pixel normal.png">
+            </div>
+
+            <h3>Pixel 10</h3>
+            <p>From $799</p>
+       
+            <a href="#">
+            <form method="POST">
+        <input type="hidden" name="action" value="add">
+        <input type="hidden" name="id" value="101"> <!-- ID Único del producto -->
+        <input type="hidden" name="nombre" value="Pixel 8 Pro">
+        <input type="hidden" name="precio" value="999.00">
+        <input type="hidden" name="cantidad" value="1">
+        
+        <button type="submit" class="btn">Comprar</button>
+    </form>
+               
+            </a>
+
+        </div>
+
+        <div class="card">
+
+            <span class="new">New</span>
+
+            <div class="imagen">
+                <img src="img/normal 10.png">
+            </div>
+
+            <h3>Pixel 10a</h3>
+            <p>From $499</p>
+    
+            <a href="#">
+            <form method="POST">
+        <input type="hidden" name="action" value="add">
+        <input type="hidden" name="id" value="101"> <!-- ID Único del producto -->
+        <input type="hidden" name="nombre" value="Pixel 8 Pro">
+        <input type="hidden" name="precio" value="999.00">
+        <input type="hidden" name="cantidad" value="1">
+        
+        <button type="submit" class="btn">Comprar</button>
+    </form>
+            
+            </a>
+
+        </div>
+
+        <div class="card">
+
+            <div class="imagen">
+                <img src="img/watch.png">
+            </div>
+
+            <h3>Pixel Watch 4</h3>
+            <p>From $349.99</p>
+
+            <a href="#">
+            <form method="POST">
+        <input type="hidden" name="action" value="add">
+        <input type="hidden" name="id" value="101"> <!-- ID Único del producto -->
+        <input type="hidden" name="nombre" value="Pixel 8 Pro">
+        <input type="hidden" name="precio" value="999.00">
+        <input type="hidden" name="cantidad" value="1">
+        
+        <button type="submit" class="btn">Comprar</button>
+    </form>
+                
+            </a>
+
+        </div>
+
+        <div class="next" id="next">
+            <i class="fa-solid fa-arrow-right"></i>
+        </div>
+
+    </div>
+
+    <div class="barra">
+        <div class="progreso"></div>
+    </div>
+
+</section>
+
+<section class="pixel">
+
+    <h1>Discover the world of Pixel.</h1>
+
+    <div class="slider">
+
+        <button class="nav left">
+            <i class="fa-solid fa-arrow-left"></i>
+        </button>
+
+        <div class="cards">
+
+            <!-- Card 1 -->
+            <div class="card">
+                <img src="img/anuncio 1.png" alt="">
+                <h3>A guide to finding your perfect Pixel 10.</h3>
+                <a href="#">
+                    Read article
+                    <i class="fa-solid fa-chevron-right"></i>
+                </a>
+            </div>
+
+            <!-- Card 2 -->
+            <div class="card">
+                <img src="img/anuncio 2.png" alt="">
+                <h3>Meet Google Pixel 10a: more of what you need, priced just right.</h3>
+                <a href="#">
+                    Read article
+                    <i class="fa-solid fa-chevron-right"></i>
+                </a>
+            </div>
+
+            <!-- Card 3 -->
+            <div class="card">
+                <img src="img/anuncio 3.png" alt="">
+                <h3>Your Pixel’s new best friend: Introducing the My Pixel app.</h3>
+                <a href="#">
+                    Read article
+                    <i class="fa-solid fa-chevron-right"></i>
+                </a>
+            </div>
+
+        </div>
+
+        <button class="nav right">
+            <i class="fa-solid fa-arrow-right"></i>
+        </button>
+
+    </div>
+
+    <div class="dots">
+        <span class="active"></span>
+        <span></span>
+        <span></span>
+    </div>
+
+</section>
+<br>
+<br>
+<div class="product-grid">
+  <!-- Tarjeta 1: Pixel Pro -->
+  <div class="card card-pro">
+    <div class="card-content">
+      <h2 class="title">Google Pixel 10<br>Pro and Pro XL</h2>
+      <p class="subtitle">Meet the new status pro.</p>
+      <a href="#" class="btn">Learn more</a>
+    </div>
+    <div class="image-container">
+      <img src="img/pro an pro xl.png" alt="Google Pixel 10 Pro" class="product-img">
+    </div>
+  </div>
+
+  <!-- Tarjeta 2: Pixel 10 -->
+  <div class="card card-base">
+    <div class="card-content">
+      <h2 class="title">Google Pixel 10</h2>
+      <p class="subtitle">Do spectacular, on the regular.</p>
+      <a href="#" class="btn">Learn more</a>
+    </div>
+    <div class="image-container">
+      <img src="img/pixel 10 card.png" alt="Google Pixel 10" class="product-img">
+    </div>
+  </div>
+
+  <!-- Tarjeta 3: Pixel 10a -->
+  <div class="card card-a">
+    <div class="card-content">
+      <h2 class="title">Google Pixel 10a</h2>
+      <p class="subtitle">The real deal.</p>
+      <a href="#" class="btn">Learn more</a>
+    </div>
+    <div class="image-container">
+      <img src="img/pixel 10a.png" alt="Google Pixel 10a" class="product-img">
+    </div>
+  </div>
+</div> <!-- Cierre añadido aquí para corregir la grilla -->
+
+<section class="pixel-showcase">
+  <!-- Tarjeta Banner Superior: Pixel 10 Pro Fold -->
+  <div class="card promo-fold">
+    <div class="card-text">
+      <h2>Google Pixel 10 Pro Fold</h2>
+      <p>Unfold extraordinary.</p>
+      <a href="#" class="btn-outline">Learn more</a>
+    </div>
+    <div class="card-img">
+      <img src="img/google-pixel-10-pro-fold-render-images-leak-kv.jpg" alt="Google Pixel 10 Pro Fold">
+    </div>
+  </div>
+
+  <!-- Fila Inferior: 3 Tarjetas -->
+  <div class="bottom-grid">
+    
+    <!-- Tarjeta 1: Pixel Watch 4 -->
+    <div class="card card-watch">
+      <div class="card-text">
+        <h2>Google Pixel<br>Watch 4</h2>
+        <p>Precision crafted. Performance ready.</p>
+        <a href="#" class="btn-outline">Learn more</a>
+      </div>
+      <div class="card-img">
+        <img src="img/reloj watch 4.png" alt="Google Pixel Watch 4">
+      </div>
+    </div>
+
+    <!-- Tarjeta 2: Fitbit Air -->
+    <div class="card card-fitbit">
+      <div class="card-text">
+        <h2>Google Fitbit Air</h2>
+        <p>Lighter gets mightier.<sup>§</sup></p>
+        <a href="#" class="btn-outline">Learn more</a>
+      </div>
+      <div class="card-img">
+        <img src="img/fitbit Air.jpg" alt="Google Fitbit Air">
+      </div>
+    </div>
+
+    <!-- Tarjeta 3: Pixel Buds 2a -->
+    <div class="card card-buds">
+      <div class="card-text">
+        <h2>Google Pixel<br>Buds 2a</h2>
+        <p>Unbelievable sound. Unreal value.</p>
+        <a href="#" class="btn-outline">Learn more</a>
+      </div>
+      <div class="card-img">
+        <img src="img/pxiel buds 2a.png" alt="Google Pixel Buds 2a">
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section class="store-highlights">
+
+  <!-- 1. Sección de Artículos/Features (2 Columnas) -->
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-banner feature-bg-purple">
+        <img src="img/pixel drop.jpg" alt="Pixel Drop Features">
+      </div>
+      <div class="feature-info">
+        <h3>Continuous updates. Constant delight.</h3>
+        <p>Every Pixel Drop brings you new and improved features, including the latest AI innovations.</p>
+        <a href="#">Learn more <i class="fa-solid fa-chevron-right"></i></a>
+      </div>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-banner feature-bg-blue">
+        <img src="img/switch over.jpg" alt="Switch over">
+      </div>
+      <div class="feature-info">
+        <h3>Switch over. Don't start over.</h3>
+        <p>Google makes switching simple - from transferring data to using Pixel features, to understanding what AI can help you do.</p>
+        <a href="#">Learn more <i class="fa-solid fa-chevron-right"></i></a>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Categorías Populares (4 Íconos) -->
+  <div class="categories-section">
+    <h2>Shop popular categories.</h2>
+    <div class="categories-grid">
+      <a href="#" class="category-item">
+        <div class="category-thumb">
+          <img src="img/watches.png" alt="Watches & Trackers">
+        </div>
+        <span>Watches & Trackers</span>
+      </a>
+
+      <a href="#" class="category-item">
+        <div class="category-thumb">
+          <img src="img/earbuds.png" alt="Earbuds">
+        </div>
+        <span>Earbuds</span>
+      </a>
+
+      <a href="#" class="category-item">
+        <div class="category-thumb">
+          <img src="img/cameras.png" alt="Cameras">
+        </div>
+        <span>Cameras</span>
+      </a>
+
+      <a href="#" class="category-item">
+        <div class="category-thumb">
+          <img src="img/phones.png" alt="Doorbells">
+        </div>
+        <span>Phones</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- 3. Productos Nest / Smart Home (3 Tarjetas) -->
+  <div class="smarthome-grid">
+    <!-- Google Home Speaker -->
+    <div class="product-card card-speaker">
+      <div class="card-text">
+        <h2>Google Home<br>Speaker</h2>
+        <p>Brilliant sound. Gemini magic.<sup>§</sup></p>
+        <a href="#" class="btn-outline">Learn more</a>
+      </div>
+      <div class="card-img">
+        <img src="img/home_speaker-removebg-preview.png" alt="Google Home Speaker">
+      </div>
+    </div>
+
+    <!-- Google Nest Cam Outdoor -->
+    <div class="product-card card-nest-cam">
+      <div class="card-text">
+        <h2>Google Nest<br>Cam Outdoor<br><span>(wired, 2nd gen)</span></h2>
+        <p>Outsmart the unknown with 2K and Gemini.</p>
+        <a href="#" class="btn-outline">Learn more</a>
+      </div>
+      <div class="card-img">
+        <img src="img/camera anuncio.png" alt="Google Nest Cam Outdoor">
+      </div>
+    </div>
+
+    <!-- Google Nest Doorbell -->
+    <div class="product-card card-doorbell">
+      <div class="card-text">
+        <h2>Google Nest<br>Doorbell<br><span>(wired, 3rd gen)</span></h2>
+        <p>2K sharp. Gemini smarts. At your door.</p>
+        <a href="#" class="btn-outline">Learn more</a>
+      </div>
+      <div class="card-img">
+        <img src="img/nest door.png" alt="Google Nest Doorbell">
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<section class="store-features-section">
+
+  <!-- Banner Superior: Google Store Merch -->
+  <div class="merch-banner">
+    <div class="merch-image">
+      <img src="img/gorra.jpg" alt="Google Store Merch">
+    </div>
+    <div class="merch-content">
+      <span class="brand-subtitle">Google Store</span>
+      <h2>For the real<br>Google fans.</h2>
+      <a href="#" class="btn-black">Explore merch</a>
+    </div>
+  </div>
+
+  <!-- Sección: Why buy on the Google Store -->
+  <div class="why-buy-container">
+    <h2 class="section-title">Why buy on the Google Store.</h2>
+
+    <div class="benefits-grid">
+      
+      <!-- Tarjeta 1: Trade in -->
+      <div class="benefit-card">
+        <div class="icon">
+          <i class="fa-solid fa-arrow-right-arrow-left"></i>
+        </div>
+        <h3>Save more when<br>you trade in.</h3>
+        <a href="#" class="link-more">
+          Learn more <i class="fa-solid fa-chevron-right"></i>
+        </a>
+      </div>
+
+      <!-- Tarjeta 2: Financing -->
+      <div class="benefit-card">
+        <div class="icon">
+          <i class="fa-solid fa-percent"></i>
+        </div>
+        <h3>Finance with 0%<br>APR for 36 months.<sup>*</sup></h3>
+        <a href="#" class="link-more">
+          Learn more <i class="fa-solid fa-chevron-right"></i>
+        </a>
+      </div>
+
+      <!-- Tarjeta 3: Price Match -->
+      <div class="benefit-card">
+        <div class="icon">
+          <i class="fa-solid fa-dollar-sign"></i>
+        </div>
+        <h3>Get our price<br>match promise.</h3>
+        <a href="#" class="link-more">
+          Learn more <i class="fa-solid fa-chevron-right"></i>
+        </a>
+      </div>
+
+      <!-- Tarjeta 4: Free Shipping -->
+      <div class="benefit-card">
+        <div class="icon">
+          <i class="fa-solid fa-truck"></i>
+        </div>
+        <h3>Free shipping.<sup>Δ</sup></h3>
+        <a href="#" class="link-more">
+          Learn more <i class="fa-solid fa-chevron-right"></i>
+        </a>
+      </div>
+
+    </div>
+  </div>
+
+</section>
+
+<section class="newsletter-banner">
+  <div class="newsletter-card">
+    <div class="newsletter-icon">
+      <i class="fa-solid fa-tag"></i>
+    </div>
+    <h2>
+      Get news, offers, cart reminders,<br>
+      personalized emails, and<br>
+      surveys from the Google Store.
+    </h2>
+    <a href="#" class="btn-signup">Sign up</a>
+  </div>
+</section>
+
+<section class="disclaimers-section">
+  <div class="disclaimers-container">
+
+    <!-- Nota 1: ^ Trade-in y Ofertas Pixel 11 -->
+    <div class="disclaimer-item">
+      <span class="symbol">^</span>
+      <p>
+        Buy Google Pixel 11 Pro (Unlocked) and get up to $600 back with eligible trade-in. Buy Google Pixel 11 Pro XL (Unlocked) and get up to $700 back with eligible trade-in. Starts August 12, 2026 and ends August 27, 2026 at 11:59 PM PT. US residents with US shipping addresses only. Must be 18 years or older. Trade-in values vary based on model, condition, year, and configuration of the trade-in device and are subject to change upon inspection. Trade-in value may also include an additional subsidy that may vary based on the model of your purchased device. Representative trade-in device(s) for maximum trade-in amount: $600 for Pixel 10 Pro or $700 for Pixel 10 Pro XL. Trade-in device must be received within 30 days from the initiation of the trade-in process. Trade-in credit will be issued as an instant credit at checkout (for select customers), as a refund back on the specific form of payment used for the device purchase at Google Store or in the form of Store Credit if the purchased device has already been returned. If the value of the trade-in device is greater than the value of the new device, any difference will be paid by issuance of Store Credit. Unless otherwise stated, offer cannot be combined with other offers and is not transferable. Purchase must be made on Google Store US. Void where prohibited. Additional trade-in terms are located <a href="#">here</a>.
+      </p>
+    </div>
+
+    <!-- Bloques suplementarios de ofertas -->
+    <div class="disclaimer-item no-symbol">
+      <p>Buy Google Pixel 11 Pro or Pro XL (Unlocked) and choose to receive $250 off the new Google Pixel Watch 5 or $200 in Google Store credit.</p>
+    </div>
+
+    <div class="disclaimer-item no-symbol">
+      <p>
+        Buy Google Pixel 11 Pro or Pro XL (Unlocked) and get $250 off the Google Pixel Watch 5. Starts August 12, 2026 and ends August 27, 2026 at 11:59 PM PT, while supplies last and subject to availability. US residents only. Must be 18 years or older. All qualifying products must be added to your shopping cart to receive this bundle offer. If a qualifying item in your order is returned, you'll be reimbursed for what you return, minus the value of the special offer. Except for eligible offers, offer cannot be combined with any promotional codes running at the same time. Purchase must be made on Google Store US. Not valid for cash or cash equivalent. Void where prohibited.
+      </p>
+    </div>
+
+    <div class="disclaimer-item no-symbol">
+      <p>
+        Buy Google Pixel 11 Pro or Pro XL (Unlocked) and get $200 in Google Store credit. Customers will receive an email notifying them that the Google Store credit is added to their account within 24 hours after the entire order ships. Starts August 12, 2026 and ends August 27, 2026 at 11:59 PM PT; while supplies last. This offer applies exclusively to the purchase of the Google Pixel 11 Pro or Pro XL when the "Unlocked" option is selected from the "Choose a carrier" menu on the Google Store. Selection of the "Google Fi" option, or any other carrier variant, at checkout renders the purchase ineligible for this specific "Unlocked" model promotion, notwithstanding the technical SIM-lock status of the device. Promotions are tied strictly to the carrier-selection SKU chosen during the configuration process and are not transferable between model variants. You must be signed into your Google Account and checkout with a Google Pay profile, using a valid form of payment. Guest checkout is ineligible to receive Google Store credit. US residents with US shipping addresses only. Must be 18 years or older. Your Google Pay profile must be registered in the US in order for Google Store credit to be issued and once issued will be in US Dollars. Google Store credit can only be used in Google Store US. Limit 2 per customer. Google Store credit typically appears in the Google Store credit balance within 24 hours after the entire order ships, and you will receive an email when the Store credit is added to your balance. Offer is void, and earned Google Store credit will be deducted from your Google Store credit balance, if the qualifying devices are returned. If you have already redeemed Google Store credits at the time of your qualifying product return, credit value will be deducted from your refund. Credit is non-transferable and not valid for cash or a cash equivalent. Google Store credit expires 365 days from the date of issuance. Void where prohibited. Terms of sale and additional Promotional Credit terms apply: <a href="https://store.google.com/intl/en_us/about/device-terms.html" target="_blank">https://store.google.com/intl/en_us/about/device-terms.html</a>. What is Google Store credit? See here for details: <a href="https://support.google.com/store/answer/7549796" target="_blank">https://support.google.com/store/answer/7549796</a>
+      </p>
+    </div>
+
+    <!-- Nota 2: § Promociones Google Fi -->
+    <div class="disclaimer-item">
+      <span class="symbol">§</span>
+      <p>
+        Promotions end 10/06/26 at 9:59am PT, or while supplies last. Must be a new user and US resident with US shipping address only, 18 years or older, with Google Pay and Google Fi Wireless accounts. Limit 1 per customer or group plan member. Bill credits are applied to plan charges (e.g. data, calls, texts), taxes and fees, financing costs, and international charges, and exclude device protection. Unused monthly credits do not roll over to the following month. Promotions are non-transferable, not valid for cash or cash equivalent, and cannot be combined with other offers. Void where prohibited.
+      </p>
+    </div>
+
+    <div class="disclaimer-item no-symbol">
+      <p>
+        Pixel discount: Get a discount of $300 at checkout and $799 back over 24 monthly bill credits for purchase of a Pixel 11 Pro, at fi.google.com, store.google.com and Google retail stores. Must select "Google Fi" in the "Choose a carrier" step of the purchase process. Taxes payable at checkout. Phone activation required by 30 days of shipment confirmation. Changing devices before 120 days invalidates instant discount, resulting in $300 charge, and cancellation, pause, or change of Fi plan before 24 months will terminate promotion and bill credits will stop.
+      </p>
+    </div>
+
+    <div class="disclaimer-item no-symbol">
+      <p>
+        Plan discount: Get a $10/mo line service credit for 24 months via monthly bill credits, applicable per line for each person that buys a Pixel 11 Pro at fi.google.com, store.google.com and Google retail stores and activates the Pixel on a new Unlimited Premium line. Pay $55/mo for 1 line ($55/line), $90/mo for 2 lines ($45/line), $105/mo for 3 lines ($35/line), $120/mo for 4 lines ($30/line), $150/mo for 5 lines ($30/line), or $180/mo for 6 lines ($30/line) for 24 months after credit. This offer can only be combined with the "Pixel discount" offer as described above, and not with other device promotions, but it will remain valid when purchasing a new device (without any promotion) or switching to a new device before 24 months.
+      </p>
+    </div>
+
+    <!-- Nota 3: §§ Suscripciones y Google One / Gemini -->
+    <div class="disclaimer-item">
+      <span class="symbol">§§</span>
+      <p>
+        By subscribing, you agree to terms for Google One, available at <a href="https://one.google.com/terms-of-service" target="_blank">one.google.com/terms-of-service</a>, and for offers, available at <a href="https://one.google.com/offer/freetrial" target="_blank">one.google.com/offer/freetrial</a>. See how Google handles data at <a href="https://www.google.com/policies/privacy" target="_blank">www.google.com/policies/privacy</a>. Google AI Pro and Gemini for Gmail, Docs, and more are only available for ages 18+. Gemini for Gmail, Docs and more is available in select languages. Rate limits may apply.
+      </p>
+    </div>
+
+    <div class="disclaimer-item no-symbol">
+      <p>
+        Actual value is $119.88 based on monthly auto-renewal rate. The Google AI Pro plan offer is available to users with the purchase and activation of a Pixel 11 Pro, Pixel 11 Pro XL or Pixel 11 Pro Fold. Must be a U.S. resident, 18 years or older. Offer is not available to: Google One users subscribed to an add-on, Google One users subscribed to a higher tier plan than the one being offered, Google One users on a family plan who are not the plan manager, and Google One users who have a subscription through a third party or affiliate. Redeem the offer by October 31, 2027 at...
+      </p>
+    </div>
+     <!-- Nota 1 -->
+     <div class="footnote-item">
+      <span class="footnote-symbol">1</span>
+      <p>Available for select countries and languages to users 18+. Feature availability will vary; some features may require subscription for higher usage. Check responses. Some features available through Gemini app.</p>
+    </div>
+
+    <!-- Nota ^^ -->
+    <div class="footnote-item">
+      <span class="footnote-symbol">^^</span>
+      <p>Pixel updates for 7 years from when the device first became available on the Google Store in the US. See <a href="https://g.co/pixel/updates" target="_blank">g.co/pixel/updates</a> for details.</p>
+    </div>
+
+    <!-- Nota †† -->
+    <div class="footnote-item">
+      <span class="footnote-symbol">††</span>
+      <p>5G service not available in all areas; speed and performance depend on factors like device configuration and capabilities, network traffic location, signal strength and signal obstruction. Actual results may vary. For more information visit <a href="https://g.co/fi/broadband-facts" target="_blank">g.co/fi/broadband-facts</a>.</p>
+    </div>
+
+    <!-- Nota † -->
+    <div class="footnote-item">
+      <span class="footnote-symbol">†</span>
+      <p>0% APR with Google Store Financing on Phone and Qualifying Purchases: Google Store Financing is a credit card issued and serviced solely by Synchrony Bank and can be used only for purchases at store.google.com. Credit card application decisions are made solely by Synchrony Bank. 0% APR with equal monthly payments is available every day on Phone Purchases (as defined in the credit card agreement). At times, we may offer Equal Pay Financing promotions with 0% APR on identified Qualifying Purchases (and all other items purchased in the same sales transaction). No interest will be charged on Phone Purchases or Qualifying Purchases and equal monthly payments are required equal to the total Phone or Qualifying Purchase amount divided by the number of months in the applicable promotional period, rounded to the whole cent. Any estimated monthly payments shown on a Phone Purchase or Qualifying Purchase may be shown rounded to the next whole dollar (for ease of display) or may be shown rounded to the whole cent. See your billing statement for your actual equal monthly payment required, which will be rounded to the whole cent. If you make your payments by the due date each month, the monthly payment (adjusted for taxes, delivery and any other items purchased in the same sale transaction) should allow you to pay off the Phone Purchase or Qualifying Purchase within the number of months advertised if this balance is the only balance on your account during the promotional period. If you have other balances on your account, this monthly payment will be added to the monthly payment applicable to those balances. New Accounts as of 6/27/24: Purchase APR for Phone Purchases 0.00%. Purchase APR for Other Purchases 34.99%. Penalty APR 39.99%. Min Interest Charge $2. Existing cardholders: See your credit card agreement terms. Subject to credit approval.</p>
+    </div>
+
+    <!-- Nota Δ -->
+    <div class="footnote-item">
+      <span class="footnote-symbol">Δ</span>
+      <p>All orders that deliver free of charge use the lowest-cost option unless otherwise noted.</p>
+    </div>
+
+    <!-- Nota * -->
+    <div class="footnote-item">
+      <span class="footnote-symbol">*</span>
+      <p>Your Pixel will generally receive Pixel Drops during the applicable Android update and support periods for the phone. See <a href="https://g.co/pixel/updates" target="_blank">g.co/pixel/updates</a> for details. Availability of some Pixel Drops may vary by phone and device model.</p>
+    </div>
+
+    <!-- Nota √ -->
+    <div class="footnote-item">
+      <span class="footnote-symbol">√</span>
+      <p>$600 estimated trade in value for Google Pixel 11 Pro based on trade in value of Pixel 10 Pro device. $1,000 estimated trade in value for Google Pixel 11 Pro Fold based on trade in value of Pixel 10 Pro Fold device. $500 estimated trade in value for Google Pixel 11 based on trade in value of Pixel 10 device. All values based on devices in good condition: turns on, is free of cracks, and the screen works properly.</p>
+    </div>
+
+  </div>
+</section>
+
+<footer class="main-footer">
+  <div class="footer-container">
+
+    <!-- Brand / Title -->
+    <div class="footer-brand">
+      <h2>Google Store</h2>
+    </div>
+
+    <!-- Links Columns Grid -->
+    <div class="footer-columns">
+      
+      <!-- Column 1: About -->
+      <div class="footer-col">
+        <h3>About</h3>
+        <ul>
+          <li><a href="#">Find a Store</a></li>
+          <li><a href="#">Magazine</a></li>
+          <li><a href="#">Pixel for Business</a></li>
+          <li><a href="#">Official Merch</a></li>
+        </ul>
+      </div>
+
+      <!-- Column 2: Orders -->
+      <div class="footer-col">
+        <h3>Orders</h3>
+        <ul>
+          <li><a href="#">Tracking an order</a></li>
+          <li><a href="#">Shipping options</a></li>
+          <li><a href="#">Country availability</a></li>
+          <li><a href="#">Pixel Care+</a></li>
+          <li><a href="#">Trade-in</a></li>
+          <li><a href="#">Financing</a></li>
+          <li><a href="#">Return Policy</a></li>
+        </ul>
+      </div>
+
+      <!-- Column 3: Support -->
+      <div class="footer-col">
+        <h3>Support</h3>
+        <ul>
+          <li><a href="#">Get help</a></li>
+          <li><a href="#">Repairs</a></li>
+          <li><a href="#">Installations</a></li>
+          <li><a href="#">Disability Support</a></li>
+          <li><a href="#">Contact us</a></li>
+          <li><a href="#">Send Feedback</a></li>
+        </ul>
+      </div>
+
+      <!-- Column 4: Sustainability -->
+      <div class="footer-col">
+        <h3>Sustainability</h3>
+        <ul>
+          <li><a href="#">Sustainability</a></li>
+          <li><a href="#">Device recycling</a></li>
+          <li><a href="#">Refurbished devices</a></li>
+        </ul>
+      </div>
+
+    </div>
+
+    <!-- Bottom Bar: Region, Legal Links & Social Icons -->
+    <div class="footer-bottom">
+      
+      <div class="footer-legal">
+        <a href="#" class="region-selector">
+          <img src="https://flagcdn.com/w20/us.png" alt="United States Flag">
+          <span>United States</span>
+        </a>
+        <a href="#">Privacy</a>
+        <a href="#">Google Nest Commitment to Privacy</a>
+        <a href="#">Sales Terms</a>
+        <a href="#">Terms of Service</a>
+        <a href="#">Careers</a>
+      </div>
+
+      <div class="footer-social">
+        <a href="#" aria-label="X (Twitter)"><i class="fa-brands fa-x-twitter"></i></a>
+        <a href="#" aria-label="Instagram"><i class="fa-brands fa-instagram"></i></a>
+        <a href="#" aria-label="Facebook"><i class="fa-brands fa-facebook"></i></a>
+        <a href="#" aria-label="YouTube"><i class="fa-brands fa-youtube"></i></a>
+        <a href="#" aria-label="TikTok"><i class="fa-brands fa-tiktok"></i></a>
+      </div>
+
+    </div>
+
+  </div>
+</footer>
+
+</body>
+</html>
